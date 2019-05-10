@@ -1,0 +1,13 @@
+#Environment
+/.vscode
+
+#Model Checkpoint
+best_model.ckpt.*
+checkpoint
+
+#Metadata pickle
+*.pkl
+
+#Data
+numberbatch-*.*
+Reviews.csv
