@@ -85,10 +85,10 @@ for i in range(5):
     print(reviews.Text[i])
     print()
 
-start = 150000
-end = start + 50000
+start = 160000
+end = start + 60000
 reviews = reviews[start:end]
-reviews = reviews.sample(frac=1).reset_index(drop=True)
+#reviews = reviews.sample(frac=1, random_state=1).reset_index(drop=True)
 
 # ## Preparing the Data
 
@@ -197,6 +197,10 @@ def clean_text(text, remove_stopwords=True):
     text = re.sub(r'&amp;', '', text)
     text = re.sub(r'[_"\-;%()|+&=*%.,!?:#$@\[\]/]', ' ', text)
     text = re.sub(r'<br />', ' ', text)
+    text = re.sub(r'<br', ' ', text)
+    text = re.sub(r'<span>', ' ', text)
+    text = re.sub(r'</span>', ' ', text)
+    text = re.sub(r'>', ' ', text)
     text = re.sub(r'\'', ' ', text)
 
     # Optionally, remove stop words
@@ -701,6 +705,7 @@ keep_probability = 0.75
 # In[231]:
 
 checkpoint = "best_model.ckpt"
+checkpoint_epoch = "epoch_model.ckpt"
 
 # Build the graph
 train_graph = tf.Graph()
@@ -782,8 +787,8 @@ learning_rate_decay = 0.95
 min_learning_rate = 0.0005
 display_step = 20  # Check training loss after every 20 batches
 stop_early = 0
-stop = 4  # If the update loss does not decrease in 3 consecutive update checks, stop training
-per_epoch = 3  # Make 3 update checks per epoch
+stop = 10 # If the update loss does not decrease in 3 consecutive update checks, stop training
+per_epoch = 4  # Make 3 update checks per epoch
 update_check = (len(sorted_texts)//batch_size//per_epoch)-1
 
 update_loss = 0
@@ -888,16 +893,16 @@ with tf.Session(graph=train_graph) as sess:
 
         epoch_loss_array.append(epoch_loss/(len(sorted_texts) // batch_size))
         last_epoch = epoch_i
+
+        if stop_early == stop:
+            print("Stopping Training.")
+            break
         with open(pickle_file_name, "wb") as pickle_file:
             metadata = {}
             metadata["last_epoch"] = last_epoch
             metadata["batch_loss_array"] = batch_loss_array
             metadata["epoch_loss_array"] = epoch_loss_array
             pickle.dump(metadata, pickle_file)
-
-        if stop_early == stop:
-            print("Stopping Training.")
-            break
 
 
 # In[260]
@@ -941,7 +946,7 @@ def text_to_seq(text):
 # In[167]:
 
 # Create your own review or use one from the dataset
-input_sentence = "nylabone winner house glad find kong bouncy balls destroy toy indestructible toys must house dead 5 minutes playful dog really enjoying tossing one chase jump flip around mouth chewing playing time playful pup 50 pounds think toy would good size dogs 75 pounds seemed small"
+input_sentence = "really difficult time finding decaffeinated iced teas area one love one get refrigerated section grocery store always convenient hand decided give whirl disappointed product surprised lemony limit caffeine intake lately find live extra burst lemon people may find bit much normally love lemon since used different brand somewhat milder one surprise still purchase especially amazon since run ragged waste ton gas trying find ore made kind"
 text = text_to_seq(input_sentence)
 #random = np.random.randint(0,len(clean_texts))
 #input_sentence = clean_texts[random]
@@ -1008,10 +1013,10 @@ print('  Response Words: {}'.format(
 # Thanks for reading!
 
 # In[299]
+
 product_id = reviews.ProductId.unique()
 print(len(product_id))
-num_of_topics = 4
-
+num_of_topics = 3
 
 def LDA_distribution(id):
     prod_reviews = reviews.Text[reviews["ProductId"] == id].values
@@ -1023,8 +1028,7 @@ def LDA_distribution(id):
     doc_term_matrix = [dictionary.doc2bow(doc) for doc in product_reviews]
     Lda = gensim.models.ldamodel.LdaModel
     lda_model = Lda(doc_term_matrix, num_topics=num_of_topics,
-                    id2word=dictionary, passes=50, random_state=12)
-    print(lda_model.bound(doc_term_matrix))
+                        id2word=dictionary, passes=50, random_state=12)
     topics = lda_model.print_topics(num_topics=num_of_topics, num_words=4)
     topicwise_distribution = {i: [] for i in range(num_of_topics)}
     original_topicwise_distribution = {i: [] for i in range(num_of_topics)}
@@ -1057,8 +1061,9 @@ pad = vocab_to_int["<PAD>"]
 
 # for id in product_id:
 #topics, topicwise_distribution = LDA_distribution(id)
+id_no = 111
 topics, topicwise_distribution, original_topicwise_distribution = LDA_distribution(
-    product_id[108])
+    product_id[id_no])
 generated_summaries = []
 for t in range(num_of_topics):
     print("Topic : {}".format(t+1))
@@ -1066,8 +1071,8 @@ for t in range(num_of_topics):
     str = ""
     for k in range(len(topic_words)):
         if((k % 2 != 0) and ("<br" not in topic_words[k])):
-            str += topic_words[k] + " "
-    print('Words: {}'.format(str))
+            str += topic_words[k] + ", "
+    print('Keywords: {}'.format(str))
     for j in range(len(topicwise_distribution[t])):
         rev_seq = text_to_seq(topicwise_distribution[t][j])
         answer_logits = sess.run(logits, {input_data: [rev_seq]*batch_size,
