@@ -504,7 +504,7 @@ def process_encoding_input(target_data, vocab_to_int, batch_size):
 
 def encoding_layer(rnn_size, sequence_length, num_layers, rnn_inputs, keep_prob):
     '''Create the encoding layer'''
-
+    layer_input = rnn_inputs
     for layer in range(num_layers):
         with tf.variable_scope('encoder_{}'.format(layer)):
             cell_fw = tf.contrib.rnn.LSTMCell(rnn_size,
@@ -519,9 +519,10 @@ def encoding_layer(rnn_size, sequence_length, num_layers, rnn_inputs, keep_prob)
 
             enc_output, enc_state = tf.nn.bidirectional_dynamic_rnn(cell_fw,
                                                                     cell_bw,
-                                                                    rnn_inputs,
+                                                                    layer_input,
                                                                     sequence_length,
                                                                     dtype=tf.float32)
+            layer_input = tf.concat(enc_output, 2)
     # Join outputs since we are using a bidirectional RNN
     enc_output = tf.concat(enc_output, 2)
 
@@ -543,7 +544,7 @@ def training_decoding_layer(dec_embed_input, summary_length, dec_cell, initial_s
                                                        initial_state,
                                                        output_layer)
 
-    training_logits, _ = tf.contrib.seq2seq.dynamic_decode(training_decoder,
+    training_logits, *_ = tf.contrib.seq2seq.dynamic_decode(training_decoder,
                                                            output_time_major=False,
                                                            impute_finished=True,
                                                            maximum_iterations=max_summary_length)
@@ -568,7 +569,7 @@ def inference_decoding_layer(embeddings, start_token, end_token, dec_cell, initi
                                                         initial_state,
                                                         output_layer)
 
-    inference_logits, _ = tf.contrib.seq2seq.dynamic_decode(inference_decoder,
+    inference_logits, *_ = tf.contrib.seq2seq.dynamic_decode(inference_decoder,
                                                             output_time_major=False,
                                                             impute_finished=True,
                                                             maximum_iterations=max_summary_length)
@@ -598,14 +599,12 @@ def decoding_layer(dec_embed_input, embeddings, enc_output, enc_state, vocab_siz
                                                      normalize=False,
                                                      name='BahdanauAttention')
 
-    dec_cell = tf.contrib.seq2seq.DynamicAttentionWrapper(dec_cell,
+    dec_cell = tf.contrib.seq2seq.AttentionWrapper(dec_cell,
                                                           attn_mech,
                                                           rnn_size)
 
-    initial_state = tf.contrib.seq2seq.DynamicAttentionWrapperState(enc_state[0],
-                                                                    _zero_state_tensors(rnn_size,
-                                                                                        batch_size,
-                                                                                        tf.float32))
+    initial_state = dec_cell.zero_state(batch_size, tf.float32)
+
     with tf.variable_scope("decode"):
         training_logits = training_decoding_layer(dec_embed_input,
                                                   summary_length,
@@ -826,7 +825,7 @@ with tf.Session(graph=train_graph) as sess:
         # Load extra data
         if os.path.exists(pickle_file_name):
             with open(pickle_file_name, "rb") as pickle_file:
-                metadata = pickle.load(pickle_file)
+                metadata = pickle.load(pickle_file, encoding="latin1")
                 last_epoch = metadata["last_epoch"]
                 batch_loss_array = metadata["batch_loss_array"]
                 epoch_loss_array = metadata["epoch_loss_array"]
@@ -876,8 +875,8 @@ with tf.Session(graph=train_graph) as sess:
                 if update_loss <= min(summary_update_loss):
                     print('New Record!')
                     stop_early = 0
-                    saver = tf.train.Saver()
-                    saver.save(sess, checkpoint)
+                    '''saver = tf.train.Saver()
+                    saver.save(sess, checkpoint)'''
 
                 else:
                     print("No Improvement.")
@@ -897,6 +896,8 @@ with tf.Session(graph=train_graph) as sess:
         if stop_early == stop:
             print("Stopping Training.")
             break
+        saver = tf.train.Saver()
+        saver.save(sess, checkpoint)
         with open(pickle_file_name, "wb") as pickle_file:
             metadata = {}
             metadata["last_epoch"] = last_epoch
@@ -910,12 +911,13 @@ with tf.Session(graph=train_graph) as sess:
 blarray = []
 eparray = []
 with open(pickle_file_name, "rb") as pickle_file:
-    metadata = pickle.load(pickle_file)
+    metadata = pickle.load(pickle_file, encoding="latin1")
     blarray = metadata["batch_loss_array"]
     eparray = metadata["epoch_loss_array"]
 fig = plt.figure(1, figsize=(15, 7.5))
 plt.xlabel("x20 batches")
 plt.ylabel("Loss")
+plt.xticks(range(0, 700, 50))
 plt.plot(blarray)
 plt.grid()
 plt.show()
@@ -923,6 +925,7 @@ plt.show()
 plt.figure(2, figsize=(15, 7.5))
 plt.xlabel("Epoch")
 plt.ylabel("Loss")
+plt.xticks(range(0, 18, 1))
 plt.plot(eparray)
 plt.grid()
 plt.show()
@@ -1040,7 +1043,6 @@ def LDA_distribution(id):
         original_topicwise_distribution[topic].append(prod_reviews[j])
     return topics, topicwise_distribution, original_topicwise_distribution
 
-
 def rougue_score(generated_summaries, id):
     prod_summaries = reviews.Summary[reviews["ProductId"] == id]
     cleaned_summaries = []
@@ -1061,6 +1063,7 @@ pad = vocab_to_int["<PAD>"]
 
 # for id in product_id:
 #topics, topicwise_distribution = LDA_distribution(id)
+num_of_topics = 3
 id_no = 111
 topics, topicwise_distribution, original_topicwise_distribution = LDA_distribution(
     product_id[id_no])
@@ -1095,3 +1098,6 @@ for t in range(num_of_topics):
 
 # In[500]
 sess.close()
+
+
+#%%
